@@ -1,0 +1,23 @@
+# This config template define every constant used for the bulk epigenomics processing pipeline
+
+#########################################################################
+## MAPPING 
+#########################################################################
+
+# BOWTIE 2
+bowtie2_option: "-k 1 -N 1 --end-to-end"
+
+#########################################################################
+## PDX specific options
+#########################################################################
+
+# BAMCMP
+bamcmp_option: "-n -s mapq"
+
+#########################################################################
+## DUPLICATE REMOVAL & REMOVAL
+#########################################################################
+
+# Duplicate Removal using picard MarkDuplicates
+mark_duplicate_option: "REMOVE_DUPLICATES=true ASSUME_SORTED=true VALIDATION_STRINGENCY=SILENT"
+

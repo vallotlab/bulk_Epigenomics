@@ -1,0 +1,509 @@
+shell.executable("/bin/bash")
+shell.prefix("PATH=$PATH:/bioinfo/local/build/Centos/bowtie2/bowtie2-2.2.9/;PATH=$PATH:/data/tmp/dsebukha/miniconda3/bin/;PATH=$PATH:/bioinfo/local/bowtie/;PATH=$PATH:/bioinfo/local/build/Centos/samtools/samtools-1.9/bin/;PATH=$PATH:/bioinfo/local/build/python/python-3.5.2/bin/;PATH=$PATH:/bioinfo/local/BEDTools/bin/;PATH=$PATH:/data/users/pkirchme/tools/Zerone/;PATH=$PATH:/data/users/pkirchme/tools/;PATH=$PATH:/data/users/pkirchme/tools/deepTools/bin/;PATH=$PATH:/bioinfo/local/build/fastx_toolkit_0.0.13/")
+import pandas as pd
+configfile: "config.yaml"
+hg38index="/data/annotations/pipelines/Human/hg38/indexes/bowtie2/hg38"
+mm10index="/data/annotations/pipelines/Mouse/mm10/indexes/bowtie2/mm10"
+hg38chrombed="/data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/annotations/hg38.chrom.bed"
+
+FILES = json.load(open(config['SAMPLES_JSON']))
+print(FILES.keys())
+print(FILES)
+print(type(FILES))
+
+READS_1 = [elem[0] for elem in FILES.values()]
+READS_2 = [elem[1] for elem in FILES.values()]
+SAMPLES = [elem for elem in FILES.keys()]
+
+READS_1_DICT = dict(zip(READS_1, SAMPLES))
+READS_2_DICT = dict(zip(READS_2, SAMPLES))
+
+print(READS_1_DICT)
+print(READS_2_DICT)
+print(SAMPLES)
+
+print("#############################################################")
+
+import csv
+import os
+
+MARK_SAMPLES = sorted(FILES.keys())
+
+CASES = [sample for sample in MARK_SAMPLES if 'input' not in sample]
+
+ALL_SAMPLES = CASES
+ALL_SAMPLES_EXT =  expand("{sample}", sample=ALL_SAMPLES)
+print("ALL_SAMPLES_EXT")
+print(ALL_SAMPLES_EXT)
+
+# Fake the creation of files for rule design_file !!!!!
+for sample in ALL_SAMPLES_EXT:
+        open(sample, 'a').close()
+
+
+LOGS_FILTERING = [] #expand("logs/{sample}_filter_out_mouse", sample=PDX_SAMPLES)
+ALL_BAM = expand("01aln/{sample}.hg38.bam", sample=ALL_SAMPLES)
+ALL_SORTED_BAM=expand("02aln/{sample}.hg38.aligned.bam",sample=ALL_SAMPLES)
+ALL_DEDUP=expand("03dedup_bam/{sample}.hg38.sorted.dedup.bam",sample=ALL_SAMPLES)
+ALL_BAMCOVERAGE=expand("07bigwig_bamCoverage/{sample}.bw", sample=ALL_SAMPLES)
+
+
+
+ALL_PEAKS = []
+BOWTIE_LOG = []
+ALL_PEAKS_MERGE = []
+ALL_PEAKS_MERGE_SHORT_FRAGMENT = []
+ALL_PEAKS_MERGE_LARGE_FRAGMENT = []
+ALL_BAMCOMPARE = []
+for case in CASES:
+	ALL_PEAKS.append("04peaks/{}.hg38.1kbp.peak.bed".format(case))
+	ALL_PEAKS_MERGE.append("05peaks/{}.hg38.1kbp.peak_merge.bed".format(case))
+	ALL_PEAKS_MERGE_SHORT_FRAGMENT.append("10short_fragment_peaks/{}.hg38.1kbp.peak_merge.bed".format(case))
+        ALL_PEAKS_MERGE_LARGE_FRAGMENT.append("13large_fragment_peaks/{}.hg38.1kbp.peak_merge.bed".format(case))
+	ALL_BAMCOMPARE.append("07bigwig_bamCompare/{}.hg38.bw".format(case))
+	BOWTIE_LOG.append("logs/bowtiestats.{}.hg38.log".format(case))
+
+	
+###########################################################################################
+
+rule all:
+	input:
+		ALL_BAMCOVERAGE,
+		ALL_DEDUP,
+		ALL_PEAKS+ALL_PEAKS_MERGE,
+		"06annotation/MACS2_merge_hg38.bed",
+		"07csv/results_MACS2_merge_hg38.csv",
+#		"07csv/results_10k_merge.csv",
+#		"07csv/results_50k_merge.csv",
+#		"07csv/results_100k_merge.csv",
+		ALL_PEAKS_MERGE_SHORT_FRAGMENT,
+                ALL_PEAKS_MERGE_LARGE_FRAGMENT,
+		"12short_fragment_csv/results_MACS2_merge_hg38.csv",
+                "15large_fragment_csv/results_MACS2_merge_hg38.csv",
+		
+
+def get_fastq_r1(wildcards):
+	l=FILES[wildcards.sample]
+	path = l[0]
+	tmp = {wildcards.sample: path}
+	return(tmp)
+
+def get_fastq_r2(wildcards): 
+        l = FILES[wildcards.sample]
+        path = l[1]
+        tmp = {wildcards.sample: path}
+        return(tmp)
+
+rule gzip_R1:
+        input:
+                unpack(get_fastq_r1)
+        output:
+                "FASTQ/{sample}.dgzipped.R1.fastq"
+        threads:20
+        log: "logs/{sample}_gzip"
+        params:
+                mem="32g",
+                time="00:30:00"
+        shell:
+                """
+		gzip -c -d {input} > {output} 2> {log}
+		"""
+rule gzip_R2:
+        input:
+                unpack(get_fastq_r2)
+        output:
+                "FASTQ/{sample}.dgzipped.R2.fastq"
+        threads:20
+        log: "logs/{sample}_gzip"
+        params:
+                mem="32g",
+                time="00:30:00"
+        shell:
+                """
+                gzip -c -d {input} > {output} 2> {log}
+                """
+
+rule trim_reads:
+        input:
+                r1="FASTQ/{sample}.dgzipped.R1.fastq",
+		r2="FASTQ/{sample}.dgzipped.R2.fastq"
+        output:
+                r1="FASTQ/{sample}.trimmed.R1.fastq",
+		r2="FASTQ/{sample}.trimmed.R2.fastq"
+        log:
+                "logs/{sample}_trim"
+        threads:20
+        params:
+                mem = "32g",
+                time ="02:00:00"
+        shell:
+                """	
+		/bioinfo/local/build/fastx_toolkit_0.0.13/fastx_trimmer -Q33 -l 50 -i {input.r1} -o {output.r1} 2> {log}
+		/bioinfo/local/build/fastx_toolkit_0.0.13/fastx_trimmer -Q33 -l 50 -i {input.r2} -o {output.r2} 2>> {log}
+		"""
+
+
+rule bowtie_map_human:
+	input:
+		r1="FASTQ/{sample}.trimmed.R1.fastq",
+		r2="FASTQ/{sample}.trimmed.R2.fastq"
+	output:
+		"01aln/{sample}.hg38.bam"
+	log: 
+		"logs/{sample}_bowtie_map_human"
+	threads:20
+	params:
+		mem = "32g",
+		time ="02:00:00"
+	shell:
+		"bowtie2 -t -p {threads} -k 1 -N 1 --end-to-end -x {hg38index} -1 {input.r1} -2 {input.r2} | samtools view -F4 -Sb - > {output} 2> {log}"
+
+
+rule bowtie_stats:
+        input:
+                fastq_case="FASTQ/{case}.R1.fastq",
+                dedup_case="03dedup_bam/{case}.hg38.sorted.dedup.bam",
+                bam_case="02aln/{case}.hg38.aligned.sorted.bam"
+        output:
+                "logs/bowtiestats.{case}.hg38.log"
+	log: "logs/{case}_bowtie_stats"
+	params:
+                mem="10g",
+                time="00:20:00"
+	shell:
+                """
+                echo {wildcards.case} \
+$(expr $(wc -l {input.fastq_case} | awk '{{print $1}}') / 4) \
+$(expr $(/bioinfo/local/build/sambamba/sambamba_v0.5.9 view {input.bam_case} | wc -l) / 2) \
+$(expr $(/bioinfo/local/build/sambamba/sambamba_v0.5.9 view {input.dedup_case} | wc -l) / 2) >  {output} 2> {log}
+                """
+
+
+rule summary:
+        input:
+                BOWTIE_LOG
+        output:
+                "BowtieStats_raw.txt"
+	log:
+		"logs/bowtiestats_raw"
+	params:
+                mem="30g",
+		time="00:30:00"
+	shell:
+                "cat {input} | sed '1iName Full_name Sample Input Aligned_IP Unique_IP Dedup_IP Aligned_INP Unique_INP Dedup_INP' > {output} 2> {log}"
+
+rule sort_bam:
+	input:
+		bam="01aln/{sample}.hg38.bam"
+	output:
+		"02aln/{sample}.hg38.aligned.sorted.bam"
+	log: "logs/{sample}_sort_bam"
+	threads:20
+	params:
+		mem = "32g",
+		time ="01:00:00"
+	shell:
+                """
+                /bioinfo/local/build/sambamba/sambamba_v0.5.9 view -t {threads} -f bam -L {hg38chrombed} {input} | samtools view -b - > 02aln/{wildcards.sample}.hg38.aligned.bam
+                /bioinfo/local/build/sambamba/sambamba_v0.5.9 sort -t {threads} 02aln/{wildcards.sample}.hg38.aligned.bam 2> {log}
+                """
+
+rule dedup_bam:
+        input:
+                "02aln/{sample}.hg38.aligned.sorted.bam"
+        output:
+                "03dedup_bam/{sample}.hg38.sorted.dedup.bam"
+	log: "logs/{sample}_dedup_bam"
+        params:
+                dup="logs/{sample}.dupstats",
+		mem = "32g",
+		time = "01:00:00"
+	threads:20
+	shell:
+                """
+		java -jar /bioinfo/local/picard-tools/MarkDuplicates.jar INPUT={input} OUTPUT={output} METRICS_FILE={params.dup} REMOVE_DUPLICATES=true ASSUME_SORTED=true VALIDATION_STRINGENCY=SILENT READ_NAME_REGEX=null
+		/bioinfo/local/build/sambamba/sambamba_v0.5.9 index -t {threads} {output} 2> {log}
+		"""
+
+
+rule peak_calling:
+        input:
+                ip="03dedup_bam/{ip}.hg38.sorted.dedup.bam"
+        output:
+                "04peaks/{ip}.hg38.1kbp.peak.bed"
+	log: "logs/{ip}_peak_calling"
+	params:
+		mem="32g",
+		time="00:20:00"
+	shell:
+                """
+		original=$PYTHONPATH
+		eval "$(/data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/miniconda2/bin/conda shell.bash hook)" 2>{log}
+		conda activate macs2 2>> {log}
+		export PYTHONPATH=/data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/miniconda2/envs/macs2/lib/python3.7/site-packages/:$PYTHONPATH 2>> {log}
+		macs2 callpeak  --nomodel --extsize 200 --keep-dup all --broad -f BAM -p 0.05 -t {input.ip} -n {output} 2>> {log}
+		cut -f1-3 {output}_peaks.broadPeak > {output}
+		conda deactivate 2>> {log}
+		export PYTHONPATH=$original
+		"""
+
+
+rule bedtools_merge:
+        input:
+                "04peaks/{ip}.hg38.1kbp.peak.bed"
+        output:
+                "05peaks/{ip}.hg38.1kbp.peak_merge.bed"
+	log: "logs/{ip}_bedtools_merge"
+	params:
+		mem="20g",
+		time="00:30:00"
+	shell:
+                "bedtools merge -d 10000 -i {input} > {output} 2> {log}"
+
+rule consensus_annotation:
+        input:
+                ALL_PEAKS_MERGE
+        output:
+                "06annotation/MACS2_merge_hg38.bed"
+        log: "logs/consensus_annotation"
+        params:
+                mem="20g",
+                time="00:30:00"
+        shell:
+                "cat {input}  | sort -k1,1 -k2,2n | mergeBed -i stdin > 06annotation/MACS2_hg38.bed && bedtools merge -d 10000 -i 06annotation/MACS2_hg38.bed > {output}"
+
+rule run_pysam_zerone:
+        input:
+                annot="06annotation/MACS2_merge_hg38.bed",
+                designfile="DesignFile.txt"
+        output:
+                "07csv/results_MACS2_merge_hg38.csv"
+	log: "logs/run_pysam_MACS2"
+	params:
+		mem="32g",
+		time="03:00:00"
+	shell:
+                "/bioinfo/local/build/Centos/python/python-3.6.1/bin/python3.6 /data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/Scripts_Python/pysam_normalization_No_IP.py -g hg38 -b 03dedup_bam -d {input.designfile} -a {input.annot} -r 07csv 2> {log}"
+
+
+rule run_pysam_segmented:
+        input:
+                annot="annotations/hg38.{segment}.bed",
+                designfile="DesignFile.txt",
+		bam_files_finished=expand("03dedup_bam/{sample}.hg38.sorted.dedup.bam", zip, sample=ALL_SAMPLES_EXT)
+        output:
+                "07csv/results_{segment}_merge.csv"
+	log: "logs/run_pysam_segmented_{segment}"
+	params:
+		mem="32g",
+		time="03:30:00"
+	shell:
+                "/bioinfo/local/build/Centos/python/python-3.6.1/bin/python3.6 /data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/Scripts_Python/pysam_normalization_No_IP.py -g hg38 -b 03dedup_bam -d {input.designfile} -a {input.annot} -r 07csv 2> {log}"
+
+
+rule design_file:
+        input:
+                ALL_SAMPLES_EXT               
+        output:
+                "DesignFile.txt"
+        log: "logs/design_file"
+        params:
+                mem="5g",
+                time="00:10:00"
+        shell:
+                """
+                echo {input} | tr " " "\n" > {output} 2> {log}
+                """
+
+
+############################################################################################################################################################
+
+rule run_bamcoverage:
+        input:
+                bam="03dedup_bam/{sample}.hg38.sorted.dedup.bam"
+        output:
+                "07bigwig_bamCoverage/{sample}.bw"
+	log: "logs/{sample}_bamCoverage"
+	params:
+		mem="32g",
+		time="02:00:00"
+	shell:
+                """
+		export PATH=/bioinfo/local/build/Centos/python/python-3.6.1/bin:$PATH
+                export PYTHONPATH=$PYTHONPATH:/bioinfo/local/build/Centos/python/python-3.6.1/lib/python3.5/site-packages
+		bamCoverage --normalizeUsing CPM --binSize 50 --smoothLength 500 --extendReads 150 --ignoreForNormalization chrX -b {input.bam} -o {output} 2> {log}
+		"""
+
+############################################################################################################################################################
+# FOOTPRINTING SPECIFIC
+############################################################################################################################################################
+
+
+######## Filter BAMS ########
+
+rule short_fragment_bam:
+        input:
+                bam="03dedup_bam/{sample}.hg38.sorted.dedup.bam"
+        output:
+                "08short_fragment_bam/{sample}.short_fragment.bam"
+        log: "logs/{sample}_short_fragment_bam"
+        threads:20
+        params:
+                mem = "32g",
+                time ="01:00:00"
+        shell:
+                """
+		samtools view {input.bam} -H > 08short_fragment_bam/{sample}.sam
+                samtools view -f 3 {input.bam} | awk -v OFS="\t" 'function abs(x){{return ((x < 0.0) ? -x : x)}} {{if (abs($9) < 121) print $0}}' >> 08short_fragment_bam/{sample}.sam
+		samtools view -b --threads {threads} 08short_fragment_bam/{sample}.sam > {output} 2> {log}
+                rm 08short_fragment_bam/{sample}.sam
+		/bioinfo/local/build/sambamba/sambamba_v0.5.9 index -t {threads} {output} 2> {log}
+                """
+
+rule large_fragment_bam:
+        input:
+                bam="03dedup_bam/{sample}.hg38.sorted.dedup.bam"
+        output:
+                "09large_fragment_bam/{sample}.large_fragment.bam"
+        log: "logs/{sample}_large_fragment_bam"
+        threads:20
+        params:
+                mem = "32g",
+                time ="01:00:00"
+        shell:
+                """
+                samtools view {input.bam} -H > 09large_fragment_bam/{sample}.sam
+                samtools view -f 3 {input.bam} | awk -v OFS="\t" 'function abs(x){{return ((x < 0.0) ? -x : x)}} {{if (abs($9) > 120) print $0}}' >> 09large_fragment_bam/{sample}.sam
+                samtools view -b --threads {threads} 09large_fragment_bam/{sample}.sam > {output} 2> {log}
+                rm 09large_fragment_bam/{sample}.sam
+                /bioinfo/local/build/sambamba/sambamba_v0.5.9 index -t {threads} {output} 2> {log}
+                """
+
+
+######### Call Short Fragment Peaks & Create annot ########
+
+rule peak_calling_short_fragment:
+        input:
+                ip="08short_fragment_bam/{ip}.short_fragment.bam"
+        output:
+                "10short_fragment_peaks/{ip}.hg38.1kbp.peak.bed"
+        log: "logs/{ip}_peak_calling"
+        params:
+                mem="32g",
+                time="00:20:00"
+        shell:
+                """
+                original=$PYTHONPATH
+                eval "$(/data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/miniconda2/bin/conda shell.bash hook)" 2>{log}
+                conda activate macs2 2>> {log}
+                export PYTHONPATH=/data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/miniconda2/envs/macs2/lib/python3.7/site-packages/:$PYTHONPATH 2>> {log}
+                macs2 callpeak  --nomodel --extsize 200 --keep-dup all -f BAM -p 0.01 -t {input.ip} -n {output} 2>> {log}
+                cut -f1-3 {output}_peaks.narrowPeak > {output}
+                conda deactivate 2>> {log}
+                export PYTHONPATH=$original
+                """
+
+
+rule bedtools_merge_short_fragment:
+        input:
+                "10short_fragment_peaks/{ip}.hg38.1kbp.peak.bed"
+        output:
+                "10short_fragment_peaks/{ip}.hg38.1kbp.peak_merge.bed"
+        log: "logs/{ip}_bedtools_merge"
+        params:
+                mem="20g",
+                time="00:30:00"
+        shell:
+                "bedtools merge -d 1000 -i {input} > {output} 2> {log}"
+
+rule consensus_annotation_short_fragment:
+        input:
+                ALL_PEAKS_MERGE_SHORT_FRAGMENT
+        output:
+                "11annotation_short_fragment/MACS2_merge_hg38.bed"
+        log: "logs/consensus_annotation_short_fragment"
+        params:
+                mem="20g",
+                time="00:30:00"
+        shell:
+                "cat {input}  | sort -k1,1 -k2,2n | mergeBed -i stdin > 11annotation_short_fragment/MACS2_hg38.bed && bedtools merge -d 1000 -i 11annotation_short_fragment/MACS2_hg38.bed > {output}"
+
+rule run_pysam_zerone_short_fragment:
+        input:
+                annot="11annotation_short_fragment/MACS2_merge_hg38.bed",
+                designfile="DesignFile.txt"
+        output:
+                "12short_fragment_csv/results_MACS2_merge_hg38.csv"
+        log: "logs/run_pysam_MACS2_short_fragment"
+        params:
+                mem="32g",
+                time="03:00:00"
+        shell:
+                "/bioinfo/local/build/Centos/python/python-3.6.1/bin/python3.6 /data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/Scripts_Python/pysam_normalization_No_IP.py -g hg38 -b 03dedup_bam -d {input.designfile} -a {input.annot} -r 12short_fragment_csv/ 2> {log}"
+
+
+####### Call Large Fragment Peaks & Create Matrix ########
+
+rule peak_calling_large_fragment:
+        input:
+                ip="09large_fragment_bam/{ip}.large_fragment.bam"
+        output:
+                "13large_fragment_peaks/{ip}.hg38.1kbp.peak.bed"
+        log: "logs/{ip}_peak_calling"
+        params:
+                mem="32g",
+                time="00:20:00"
+        shell:
+                """
+                original=$PYTHONPATH
+                eval "$(/data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/miniconda2/bin/conda shell.bash hook)" 2>{log}
+                conda activate macs2 2>> {log}
+                export PYTHONPATH=/data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/miniconda2/envs/macs2/lib/python3.7/site-packages/:$PYTHONPATH 2>> {log}
+                macs2 callpeak  --nomodel --broad --extsize 200 --keep-dup all -f BAM -p 0.05 -t {input.ip} -n {output} 2>> {log}
+                cut -f1-3 {output}_peaks.broadPeak > {output}
+                conda deactivate 2>> {log}
+                export PYTHONPATH=$original
+                """
+
+
+rule bedtools_merge_large_fragment:
+        input: 
+                "13large_fragment_peaks/{ip}.hg38.1kbp.peak.bed"
+        output:
+                "13large_fragment_peaks/{ip}.hg38.1kbp.peak_merge.bed"
+        log: "logs/{ip}_bedtools_merge"
+        params:
+                mem="20g",
+                time="00:30:00"
+        shell:
+                "bedtools merge -d 10000 -i {input} > {output} 2> {log}"
+
+rule consensus_annotation_large_fragment:
+        input:
+                ALL_PEAKS_MERGE_LARGE_FRAGMENT
+        output: 
+                "14annotation_large_fragment/MACS2_merge_hg38.bed"
+        log: "logs/consensus_annotation_large_fragment"
+        params:
+                mem="20g",
+                time="00:30:00"
+        shell: 
+                "cat {input}  | sort -k1,1 -k2,2n | mergeBed -i stdin > 14annotation_large_fragment/MACS2_hg38.bed && bedtools merge -d 10000 -i 14annotation_short_fragment/MACS2_hg38.bed > {output}"
+
+rule run_pysam_zerone_large_fragment:
+        input:
+                annot="14annotation_large_fragment/MACS2_merge_hg38.bed",
+                designfile="DesignFile.txt"
+        output:
+                "15large_fragment_csv/results_MACS2_merge_hg38.csv"
+        log: "logs/run_pysam_MACS2_large_fragment"
+        params:
+                mem="32g",
+                time="03:00:00"
+        shell:
+                "/bioinfo/local/build/Centos/python/python-3.6.1/bin/python3.6 /data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/Scripts_Python/pysam_normalization_No_IP.py -g hg38 -b 03dedup_bam -d {input.designfile} -a {input.annot} -r 15large_fragment_csv/ 2> {log}"
+
+
+
+
+

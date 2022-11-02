@@ -1,0 +1,291 @@
+shell.executable("/bin/bash")
+shell.prefix("PATH=$PATH:/data/tmp/dsebukha/miniconda3/bin/;PATH=$PATH:/bioinfo/local/bowtie/;PATH=$PATH:/bioinfo/local/samtools/;PATH=$PATH:/bioinfo/local/build/python/python-3.5.2/bin/;PATH=$PATH:/bioinfo/local/BEDTools/bin/;PATH=$PATH:/data/users/pkirchme/tools/Zerone/;PATH=$PATH:/data/users/pkirchme/tools/;PATH=$PATH:/data/users/pkirchme/tools/deepTools/bin/")
+import pandas as pd
+configfile: "config.yaml"
+hg38index="/data/annotations/bowtie_indexes/hg38"
+mm10index="/data/annotations/bowtie_indexes/mm10"
+hg38chrombed="/data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/annotations/hg38.chrom.bed"
+
+FILES = json.load(open(config['SAMPLES_JSON']))
+print(FILES.keys())
+
+import csv
+import os
+
+MARK_SAMPLES = sorted(FILES.keys())
+
+
+CONTROLS = [sample for sample in MARK_SAMPLES if 'input' in sample]
+CASES = [sample for sample in MARK_SAMPLES if 'input' not in sample]
+## multiple samples may use the same control input/IgG files
+CONTROLS_UNIQUE = list(set(CONTROLS))
+
+print(CONTROLS)
+print(CASES)
+
+ALL_SAMPLES = CASES + CONTROLS_UNIQUE
+HUMAN_SAMPLES = [sample for sample in ALL_SAMPLES] # if sample not in PDX_SAMPLES]
+print(HUMAN_SAMPLES)
+
+HUMAN_FASTQ = expand("FASTQ/{sample}.fastq", sample=ALL_SAMPLES)  #HUMAN_SAMPLES
+HUMAN_ALIGNED = expand("01aln/{sample}.hg38_only.bam", sample=ALL_SAMPLES)  #HUMAN_SAMPLES
+LOGS_HUMAN_ALIGN = expand("logs/{sample}_bowtie_map_human", sample=ALL_SAMPLES)  #HUMAN_SAMPLES
+
+print(HUMAN_FASTQ)
+
+LOGS_FILTERING = [] #expand("logs/{sample}_filter_out_mouse", sample=PDX_SAMPLES)
+ALL_BAM = expand("01aln/{sample}.hg38.bam", sample=ALL_SAMPLES)
+ALL_SORTED_BAM=expand("02aln/{sample}.hg38.aligned.bam",sample=ALL_SAMPLES)
+ALL_DEDUP=expand("03dedup_bam/{sample}.hg38.sorted.dedup.bam",sample=ALL_SAMPLES)
+ALL_BAMCOVERAGE=expand("07bigwig_bamCoverage/{sample}.bw", sample=ALL_SAMPLES)
+
+
+
+ALL_PEAKS = []
+BOWTIE_LOG = []
+ALL_PEAKS_MERGE = []
+ALL_BAMCOMPARE = []
+for case in CASES:
+	name = "_".join(case.split("_")[0:-1])	
+	control = name + "_" + 'input'
+	if control in CONTROLS:
+		ALL_PEAKS.append("04peaks/{}_vs_{}.hg38.1kbp.peak.bed".format(case, control))
+		ALL_PEAKS_MERGE.append("05peaks_merge/{}_vs_{}.hg38.1kbp.peak_merge.bed".format(case, control))
+		ALL_BAMCOMPARE.append("07bigwig_bamCompare/{}_vs_{}.hg38.bw".format(case, control))
+		BOWTIE_LOG.append("logs/bowtiestats.{}_vs_{}.hg38.log".format(case, control))
+
+	
+###########################################################################################
+
+rule all:
+	input:
+		#BOWTIE_LOG,
+		#ALL_BAMCOVERAGE+ALL_BAMCOMPARE, 
+		#"BowtieStats.txt",
+		#ALL_PEAKS+ALL_PEAKS_MERGE,
+		#"06annotation/Zerone_merge_hg38.bed",
+		"07csv/results_Zerone_merge_hg38.csv",
+		#"07csv/results_10k_merge.csv",
+		#"07csv/results_50k_merge.csv",
+		#"07csv/results_100k_merge.csv"
+		
+
+
+def get_fastq(wildcards):
+	l=FILES[wildcards.sample]
+	print(l)
+        flat_list = [item for sublist in l for item in sublist]	
+        #return(flat_list)
+	return(l)
+
+
+rule bowtie_map_human:
+	input:
+		"FASTQ/{sample}.fastq"
+	output:
+		"01aln/{sample}.hg38.bam"
+	log: 
+		"logs/{sample}_bowtie_map_human"
+	threads:20
+	params:
+		mem = "32g",
+		time ="02:00:00"
+	shell:
+		"bowtie -t -p {threads} -S -k 1 -m 1 {hg38index} {input} | samtools view -Sb - > {output} 2> {log}"
+
+
+rule bowtie_stats:
+        input:
+                fastq_control="FASTQ/{control}.fastq",
+                dedup_control="03dedup_bam/{control}.hg38.sorted.dedup.bam",
+                bam_control="02aln/{control}.hg38.aligned.sorted.bam",
+                fastq_case="FASTQ/{case}.fastq",
+                dedup_case="03dedup_bam/{case}.hg38.sorted.dedup.bam",
+                bam_case="02aln/{case}.hg38.aligned.sorted.bam"
+        output:
+                "logs/bowtiestats.{case}_vs_{control}.hg38.log"
+	log: "logs/{case}_{control}_bowtie_stats"
+	params:
+                mem="10g",
+                time="00:20:00"
+	shell:
+                """
+                echo {wildcards.case} {wildcards.control} \
+$(expr $(wc -l {input.fastq_case} | awk '{{print $1}}') / 4) \
+$(sambamba view {input.bam_case} | wc -l) \
+$(sambamba view {input.dedup_case} | wc -l) \
+$(expr $(wc -l {input.fastq_control} | awk '{{print $1}}') / 4) \
+$(sambamba view {input.bam_control} | wc -l) \
+$(sambamba view {input.dedup_control} | wc -l) >  {output} 2> {log}
+                """
+
+
+rule summary:
+        input:
+                BOWTIE_LOG
+        output:
+                "BowtieStats_raw.txt"
+	log:
+		"logs/bowtiestats_raw"
+	params:
+                mem="30g",
+		time="00:30:00"
+	shell:
+                "cat {input} | sed '1iName Full_name Sample Input Aligned_IP Unique_IP Dedup_IP Aligned_INP Unique_INP Dedup_INP' > {output} 2> {log}"
+
+rule sort_bam:
+	input:
+		bam="01aln/{sample}.hg38.bam"
+	output:
+		"02aln/{sample}.hg38.aligned.sorted.bam"
+	log: "logs/{sample}_sort_bam"
+	threads:20
+	params:
+		mem = "32g",
+		time ="01:00:00"
+	shell:
+                """
+                sambamba view -t {threads} -f bam -L {hg38chrombed} {input} | samtools view -b - > 02aln/{wildcards.sample}.hg38.aligned.bam
+                sambamba sort -t {threads} 02aln/{wildcards.sample}.hg38.aligned.bam 2> {log}
+                """
+
+
+rule dedup_bam:
+        input:
+                "02aln/{sample}.hg38.aligned.sorted.bam"
+        output:
+                "03dedup_bam/{sample}.hg38.sorted.dedup.bam"
+	log: "logs/{sample}_dedup_bam"
+        params:
+                dup="{sample}.dupstats",
+		mem = "32g",
+		time = "01:00:00"
+	threads:20
+	shell:
+                """
+		java -jar /bioinfo/local/picard-tools/MarkDuplicates.jar INPUT=02aln/{wildcards.sample}.hg38.aligned.sorted.bam OUTPUT={output} METRICS_FILE={params.dup} REMOVE_DUPLICATES=true ASSUME_SORTED=true VALIDATION_STRINGENCY=SILENT
+		sambamba index -t {threads} {output} 2> {log}
+		"""
+
+
+rule peak_calling:
+        input:
+                ip="03dedup_bam/{ip}.hg38.sorted.dedup.bam",
+                inp="03dedup_bam/{inp}.hg38.sorted.dedup.bam"
+        output:
+                "04peaks/{ip}_vs_{inp}.hg38.1kbp.peak.bed"
+	log: "logs/{ip}_{inp}_peak_calling"
+	params:
+		mem="32g",
+		time="00:20:00"
+	shell:
+                "zerone -w 1000 -l -c 0.95 -0 {input.inp} -1 {input.ip} > {output} 2> {log}"
+
+
+rule bedtools_merge:
+        input:
+                "04peaks/{ip}_vs_{inp}.hg38.1kbp.peak.bed"
+        output:
+                "05peaks_merge/{ip}_vs_{inp}.hg38.1kbp.peak_merge.bed"
+	log: "logs/{ip}_{inp}_bedtools_merge"
+	params:
+		mem="20g",
+		time="00:30:00"
+	shell:
+                "bedtools merge -d 10000 -i {input} > {output} 2> {log}"
+
+
+
+rule run_pysam_zerone:
+        input:
+                annot="06annotation/Zerone_merge_hg38.bed",
+                designfile="DesignFile.txt"
+        output:
+                "07csv/results_Zerone_merge_hg38.csv"
+	log: "logs/run_pysam_zerone"
+	params:
+		mem="32g",
+		time="03:00:00"
+	shell:
+                "/bioinfo/local/build/Centos/python/python-3.6.1/bin/python3.6 /data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/Scripts_Python/pysam_normalization.py -g hg38 -b 03dedup_bam -d {input.designfile} -a {input.annot} -r 07csv"
+
+
+
+#rule run_pysam_segmented:
+#        input:
+#                annot="annotations/hg38.{segment}.bed",
+#                designfile="DesignFile.txt"
+#        output:
+#                "07csv/results_{segment}_merge.csv"
+#	log: "logs/run_pysam_segmented"
+#	params:
+#		mem="32g",
+#		time="03:30:00"
+#	shell:
+#                "/bioinfo/local/build/Centos/python/python-3.6.1/bin/python3.6 /data/kdi_prod/project_result/1184/02.00/results/ClusterFiles/Dependencies/Scripts_Python/pysam_normalization.py -g hg38 -b 03dedup_bam -d {input.designfile} -a {input.annot} -r 07csv"
+#
+
+rule bt_stats_header:
+        input:
+                "BowtieStats_raw.txt"
+        output:
+                "BowtieStats.txt"
+	log: "logs/bt_stats_header"
+	params:
+		mem="5g",
+		time="00:10:00"
+	shell:
+		"""
+		awk '{{ print $1" "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9 }}' {input} | sed '1iSample Input Aligned_IP Unique_IP Dedup_IP Aligned_INP Unique_INP Dedup_INP' > {output} 2> {log}
+		"""
+
+rule design_file:
+        input:
+                "BowtieStats_raw.txt"
+        output:
+                "DesignFile.txt"
+        log: "logs/design_file"
+        params:
+                mem="5g",
+                time="00:10:00"
+        shell:
+                """
+                awk 'NR>1{{ a=$1; gsub("_IP","",$1); print 1" "1" "a" "$2" "$1" Human hg38" }}' {input} > {output} 2> {log}
+                """
+
+############################################################################################################################################################
+
+rule run_bamcompare:
+        input:
+                ip="03dedup_bam/{ip}.hg38.sorted.dedup.bam",
+                inp="03dedup_bam/{inp}.hg38.sorted.dedup.bam"
+        output:
+                "07bigwig_bamCompare/{ip}_vs_{inp}.hg38.bw"
+	log: "logs/{ip}_{inp}_run_bamcompare"
+	params:
+		mem="32g",
+		time="02:00:00"
+	shell:
+                """
+		export PATH=/bioinfo/local/build/Centos/python/python-3.6.1/bin:$PATH
+                export PYTHONPATH=$PYTHONPATH:/bioinfo/local/build/Centos/python/python-3.6.1/lib/python3.5/site-packages
+		bamCompare -b2 {input.inp} -b1 {input.ip} --binSize 50 --smoothLength 1000 --extendReads 150 --ignoreForNormalization chrX --operation log2 --pseudocount 1 --skipNonCoveredRegions -o {output} 2> {log}	
+		"""
+
+rule run_bamcoverage:
+        input:
+                "03dedup_bam/{sample}.hg38.sorted.dedup.bam"
+        output:
+                "07bigwig_bamCoverage/{sample}.bw"
+	log: "logs/{sample}_bamCoverage"
+	params:
+		mem="32g",
+		time="02:00:00"
+	shell:
+                """
+		export PATH=/bioinfo/local/build/Centos/python/python-3.6.1/bin:$PATH
+                export PYTHONPATH=$PYTHONPATH:/bioinfo/local/build/Centos/python/python-3.6.1/lib/python3.5/site-packages
+		bamCoverage --normalizeUsing CPM --binSize 50 --smoothLength 500 --extendReads 150 --ignoreForNormalization chrX -b {input} -o {output} 2> {log}
+		"""
+
+
