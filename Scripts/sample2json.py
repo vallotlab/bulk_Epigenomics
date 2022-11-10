@@ -70,7 +70,6 @@ with open(args.sampleSheet, "r") as f:
 		sample_name = row[2].strip()
 		dataset = row[0].strip()
 		genome = row[3].strip()
-		
 		# Retrieve the mark from the last part of the name
 		# has to bead XXXXXXXXXX_H3K27me3 or XXXXXX_EZH2 or XXXXXXX_input
 		mark = re.sub(".*_", "", sample_name).lower()
@@ -85,16 +84,12 @@ with open(args.sampleSheet, "r") as f:
       
 		elif dataset=="custom_PE" :
 		  input_dir = row[1].strip()
-		  print(input_dir)
-		  print(sample_name)
 		  fastq_file_path_R1 = subprocess.Popen(["find -L " + input_dir + " -name '%s'.R1.fastq.gz " % sample_name], stdout=subprocess.PIPE, shell=True)
 		  fastq_file_path_R2 = subprocess.Popen(["find -L " + input_dir + " -name '%s'.R2.fastq.gz " % sample_name], stdout=subprocess.PIPE, shell=True)
 		  (out, err) = fastq_file_path_R1.communicate()
 		  fastq_file_path_R1 = out.decode('utf-8').strip()
 		  (out, err) = fastq_file_path_R2.communicate()
 		  fastq_file_path_R2 = out.decode('utf-8').strip()
-		  print(fastq_file_path_R2)
-		  print(fastq_file_path_R1)
       
 		elif args.chromatinIndexing:
 			fastq_name = row[1].strip()
