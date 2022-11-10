@@ -148,7 +148,6 @@ with open(args.sampleSheet, "r") as f:
 		        has_control = False
 		
 		design_index = (config_df.genome_assembly == genome) & (config_df.mark_type == mark_type) & (config_df.has_control == has_control)
-		
 		bowtie2_indexes[sample_name] = str(config_df.bowtie2_index[design_index].iloc[0])
 		second_species_bowtie2_indexes[sample_name] = str(config_df.second_species_bowtie2_index[design_index].iloc[0])
 		chromosome_files[sample_name] = str(config_df.chromosome_file[design_index].iloc[0])
