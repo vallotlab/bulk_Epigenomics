@@ -22,7 +22,7 @@ import argparse
 import pandas as pd
 
 # Customizable constants
-broad_marks = ['H3K36me3', "H3K9me3", "H3K27me3"]
+broad_marks = ['h3k36me3', "h3k9me3", "h3k27me3"]
 
 # Parsing argument
 parser = argparse.ArgumentParser(description='Translate Sample sheet into json file.')
@@ -73,7 +73,7 @@ with open(args.sampleSheet, "r") as f:
 		
 		# Retrieve the mark from the last part of the name
 		# has to bead XXXXXXXXXX_H3K27me3 or XXXXXX_EZH2 or XXXXXXX_input
-		mark = re.sub(".*_", "", sample_name)
+		mark = re.sub(".*_", "", sample_name).lower()
 		
 		
 		if dataset=="custom_SE" :

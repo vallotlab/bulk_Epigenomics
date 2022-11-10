@@ -8,6 +8,7 @@ script_dir=~/GitLab/bulk_Epigenomics/
 image=~/Singularity/bulk_Epigenomics/bulkEpigenomics.sif
 bind_directory=/data/
 
+cd $script_dir
 
 # Copy the pipeline to the output directory & delete logs if already existing
 mkdir -p $output_dir
@@ -17,7 +18,8 @@ cp -f run_bulk_Epigenomics.sh $output_dir/
 cp -f Snakefile_bulk_Epigenomics.py $output_dir/
 cp -f species_design_configs.tsv $output_dir/
 cp -f CONFIG_TEMPLATE.yaml $output_dir/
-rm -rf $output_dir/logs/*
+cp -f $sample_sheet $output_dir/
+rm -rf $output_dir/logs/*.log
 
 # Create sample configuration file
 python3 Scripts/sample2json.py -i $sample_sheet -o $output_dir/ -c $output_dir/species_design_configs.tsv 
