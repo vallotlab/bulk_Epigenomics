@@ -1,0 +1,21 @@
+Bootstrap: docker
+
+From: continuumio/miniconda3
+
+%environment
+  export PATH=/opt/conda/bin/
+  export LD_LIBRARY_PATH="/usr/lib/htslib-1.6/"
+  export SINGULARITY_SHELL=/bin/bash
+ 
+  
+%files
+    /media/pprompsy/Depic_bioinfo_1/InstitutCurie/Documents/Data/Singularity/Environments/bulk_Epigenomics/packed_environment.tar.gz /root/packed_environment.tar.gz
+    /home/pprompsy/htslib-1.6/ /usr/lib/htslib-1.6
+%post
+    tar xvzf /root/packed_environment.tar.gz -C /opt/conda
+    conda-unpack
+    rm /root/packed_environment.tar.gz
+
+
+%runscript 
+	echo "You are in bulkEpigenomics container"
