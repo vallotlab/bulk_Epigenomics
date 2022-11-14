@@ -268,10 +268,11 @@ rule sort_bam:
         is_pdx = get_second_species_bowtie2_index
     shell:
         """
+        mkdir -p tmp/
         if [[ {params.is_pdx} == "False" ]]; then 
-          sambamba view -f bam -L {params.chromosome_bed} {input} | sambamba sort -t {threads} /dev/stdin -o {output} 2> {log}
+          sambamba view -f bam -L {params.chromosome_bed} {input} | sambamba sort --tmpdir tmp/ -t {threads} /dev/stdin -o {output} 2> {log}
         else
-          sambamba view -f bam -L {params.chromosome_bed} {input} | sambamba sort -N -t {threads} /dev/stdin -o {output} 2> {log}
+          sambamba view -f bam -L {params.chromosome_bed} {input} | sambamba sort --tmpdir tmp/ -N -t {threads} /dev/stdin -o {output} 2> {log}
         fi
         """
 
@@ -288,7 +289,8 @@ rule sort_secondary_bam:
         mem="20g"
     shell:
         """
-        sambamba sort -N -t {threads} {input} -o {output} 2>> {log}
+        mkdir -p tmp/
+        sambamba sort --tmpdir tmp/ -N -t {threads} {input} -o {output} 2>> {log}
         """
 
 rule filter_out_secondary:
@@ -305,8 +307,9 @@ rule filter_out_secondary:
         time="02:00:00"
     shell:
         """
+        mkdir -p tmp/
         bamcmp -1 {input.primary} -2 {input.secondary} -a {output}.unsorted -A {output}.temp -t {threads} -n -s mapq 2> {log}
-        sambamba sort -t {threads} {output}.unsorted -o {output} 2>> {log}
+        sambamba sort --tmpdir tmp/ -t {threads} {output}.unsorted -o {output} 2>> {log}
         rm {output}.temp
         """
         
