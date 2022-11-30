@@ -130,7 +130,7 @@ with open(args.sampleSheet, "r") as f:
 		marks_type[sample_name] = mark_type
 
 		# Check if the sample is a control
-		sample_common_name = re.sub("_" + mark, "", sample_name)
+		sample_common_name = re.sub("_" + mark, "", sample_name, flags=re.IGNORECASE)
 		if (mark == "input"):
 		    is_control[sample_name] = True
 		else:
