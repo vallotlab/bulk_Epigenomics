@@ -1,6 +1,6 @@
-custom_PE,/media/gjouault/LaCie/InstitutCurie/Documents/Data/Analysis/Pipelines_test/Paired_End,sample1_PDX_H3K27me3,pdx
-custom_PE,/media/gjouault/LaCie/InstitutCurie/Documents/Data/Analysis/Pipelines_test/Paired_End,sample2_PDX_H3K4me3,pdx
-custom_PE,/media/gjouault/LaCie/InstitutCurie/Documents/Data/Analysis/Pipelines_test/Paired_End,sample2_PDX_input,pdx
-custom_PE,/media/gjouault/LaCie/InstitutCurie/Documents/Data/Analysis/Pipelines_test/Paired_End,sample3_Mouse_H3K9me3,mm10
-custom_PE,/media/gjouault/LaCie/InstitutCurie/Documents/Data/Analysis/Pipelines_test/Paired_End,sample3_Mouse_input,mm10
-custom_PE,/media/gjouault/LaCie/InstitutCurie/Documents/Data/Analysis/Pipelines_test/Paired_End,sample4_Human_EZH2,hg38
+custom_PE,/data/users/gjouault/Pipelines_test/Paired_End/,sample1_PDX_H3K27me3,pdx
+custom_PE,/data/users/gjouault/Pipelines_test/Paired_End/,sample2_PDX_H3K4me3,pdx
+custom_PE,/data/users/gjouault/Pipelines_test/Paired_End/,sample2_PDX_input,pdx
+custom_PE,/data/users/gjouault/Pipelines_test/Paired_End/,sample3_Mouse_H3K9me3,mm10
+custom_PE,/data/users/gjouault/Pipelines_test/Paired_End/,sample3_Mouse_input,mm10
+custom_PE,/data/users/gjouault/Pipelines_test/Paired_End/,sample4_Human_EZH2,hg38

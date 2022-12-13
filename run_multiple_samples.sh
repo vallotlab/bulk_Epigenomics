@@ -4,10 +4,12 @@ output_dir=$2
 params=$3
 
 # Constants paths
-script_dir=/media/gjouault/LaCie/InstitutCurie/Documents/Gitlab/bulk_Epigenomics/
-image=/media/gjouault/LaCie/InstitutCurie/Documents/Data/Singularity/bulkEpigenomics.sif
-bind_directory=/media/
-cores=8
+
+script_dir=/data/users/gjouault/GitLab/bulk_Epigenomics/
+image=/data/users/gjouault/Singularity/bulk_Epigenomics/bulkEpigenomics.sif
+bind_directory=/data/
+cores=20
+
 cd $script_dir
 
 # Copy the pipeline to the output directory & delete logs if already existing
@@ -24,5 +26,8 @@ rm -rf $output_dir/logs/*.log
 # Create sample configuration file
 python3 Scripts/sample2json.py -i $sample_sheet -o $output_dir/ -c $output_dir/species_design_configs.tsv 
 
+
 # Launch the pipeline using Singularity Image
-singularity  exec --bind ${bind_directory}:${bind_directory} --bind ${output_dir}:/mnt/ $image /bin/bash -c "/mnt/run_bulk_Epigenomics.sh ${cores} ${params}"  #| qsub -l nodes=1:ppn=$cores,mem=35gb -N $(basename ${output_dir})
+
+echo "singularity  exec --bind ${bind_directory}:${bind_directory} --bind ${output_dir}:/mnt/ $image /bin/bash -c \"/mnt/run_bulk_Epigenomics.sh ${cores} ${params}\" " | qsub -l nodes=1:ppn=$cores,mem=70gb -N $(basename ${output_dir})
+
