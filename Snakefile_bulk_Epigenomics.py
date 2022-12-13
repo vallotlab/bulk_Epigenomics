@@ -355,7 +355,8 @@ rule peak_calling:
         fi
         if [[ {params.peak_caller} == "macs2" ]]; then
           macs2 callpeak {params.peak_calling_option} -t {input.ip} -n {output} 2> {log}
-		      cut -f1-3 {output}_peaks.*Peak | bedtools merge -d {params.peak_merging_option} -i /dev/stdin > {output} 2>> {log}
+	  rm -f {output}_peaks.gappedPeak
+	  cut -f1-3 {output}_peaks.*Peak | bedtools sort -i /dev/stdin/ | bedtools merge -d {params.peak_merging_option} -i /dev/stdin > {output} 2>> {log}
         fi
         """
 
@@ -370,7 +371,7 @@ rule consensus_annotation:
         mem="5g",
         time="00:30:00"
     shell:
-        "cat {input} | sort -k1,1 -k2,2n | mergeBed -i /dev/stdin | bedtools merge -d 1000 -i /dev/stdin > {output}"
+        "cat {input} | bedtools sort -i /dev/stdin | mergeBed -i /dev/stdin | bedtools merge -d 1000 -i /dev/stdin > {output}"
 
 rule run_pysam_consensus:
     input:
