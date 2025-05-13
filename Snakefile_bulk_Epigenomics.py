@@ -104,6 +104,10 @@ def get_input_fastq_r1(wildcards):
 def get_input_fastq_r2(wildcards):
     r2 = config_sample["fastq.r2"][wildcards.sample]
     return(r2)
+def get_input_fastqs(wildcards):
+    r1 = config_sample["fastq.r1"][wildcards.sample]
+    r2 = config_sample["fastq.r2"].get(wildcards.sample, None)
+    return [r1] if r2 in [None, ""] else [r1, r2]
 def get_bowtie2_index(wildcards):
     ret = config_sample["bowtie2_index"][wildcards.sample]
     return(ret)
@@ -215,8 +219,7 @@ rule all:
         
 rule bowtie2_map:
     input:
-        get_input_fastq_r1,
-        get_input_fastq_r2
+        get_input_fastqs
     output:
         temp("01_mapping/{sample}.bam")
     log:
@@ -235,8 +238,7 @@ rule bowtie2_map:
 
 rule bowtie2_map_secondary:
     input:
-        get_input_fastq_r1,
-        get_input_fastq_r2
+        get_input_fastqs
     output:
         temp("01_mapping/{sample}.secondary.bam")
     log:
