@@ -8,7 +8,7 @@ params=$3
 script_dir=/data/users/gjouault/GitLab/bulk_Epigenomics/
 image=/data/users/gjouault/Singularity/bulk_Epigenomics/bulkEpigenomics.sif
 bind_directory=/data/
-cores=20
+cores=12
 
 cd $script_dir
 
@@ -29,5 +29,5 @@ python3 Scripts/sample2json.py -i $sample_sheet -o $output_dir/ -c $output_dir/s
 
 # Launch the pipeline using Singularity Image
 
-echo "singularity  exec --bind ${bind_directory}:${bind_directory} --bind ${output_dir}:/mnt/ $image /bin/bash -c \"/mnt/run_bulk_Epigenomics.sh ${cores} ${params}\" " | qsub -l nodes=1:ppn=$cores,mem=70gb -N $(basename ${output_dir})
+echo "singularity  exec --bind ${bind_directory}:${bind_directory} --bind ${output_dir}:/mnt/ $image /bin/bash -c \"/mnt/run_bulk_Epigenomics.sh ${cores} ${params}\" " | qsub -l nodes=1:ppn=$cores,mem=60gb,walltime=164:00:00 -N $(basename ${output_dir})
 

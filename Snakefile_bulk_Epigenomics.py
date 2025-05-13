@@ -132,7 +132,9 @@ def get_peak_merging_option(wildcards):
 def get_bamCoverage_option(wildcards):
     ret = config_sample["bamCoverage_option"][wildcards.sample]
     return(ret)
-
+def get_mark_type_option(wildcards):
+    ret = config_sample["mark_type"][wildcards.sample]
+    return(ret)
   
 def get_input_dedup_bam(wildcards):
     is_pdx = get_second_species_bowtie2_index(wildcards)
@@ -349,7 +351,9 @@ rule peak_calling:
         peak_caller=get_peak_caller,
         peak_calling_option=get_peak_calling_option,
         peak_merging_option=get_peak_merging_option,
-        control=get_control
+        control=get_control,
+	mark_type=get_mark_type_option
+
     shell:
         """
         if [[ {params.peak_caller} == "zerone" ]]; then
@@ -358,7 +362,13 @@ rule peak_calling:
         if [[ {params.peak_caller} == "macs2" ]]; then
           macs2 callpeak {params.peak_calling_option} -t {input.ip} -n {output} 2> {log}
 	  rm -f {output}_peaks.gappedPeak
-	  cut -f1-3 {output}_peaks.*Peak | bedtools sort -i /dev/stdin/ | bedtools merge -d {params.peak_merging_option} -i /dev/stdin > {output} 2>> {log}
+	if [[ {params.mark_type} == "broad" ]]; then
+          	## Calculate quantile of distribution of fold enrichment for better peaks filtering
+          	cat {output}_peaks.broadPeak > {output}_peaks.tmp
+		filter=$(cat {output}_peaks.tmp | sort -T 03_peaks/ -k 7 /dev/stdin  | awk '{{all[NR] = $7}} END{{print all[int(NR*0.9 - 0.5)]}}')
+          	cat {output}_peaks.tmp | awk  -v f=$filter '{{if($7 > f){{print $0}}}}' > {output}_peaks.broadPeak
+        fi
+	cut -f1-3 {output}_peaks.*Peak | bedtools sort -i /dev/stdin/ | bedtools merge -d {params.peak_merging_option} -i /dev/stdin > {output} 2>> {log}
         fi
         """
 
